@@ -236,20 +236,6 @@ which contains a map to be called with a ring handler."
                                 (handler-request ring-handler handler-map) response-or-handler-map)]
                  (authenticate-response response request))))
 
-#_(defn new-authenticate
-  [handler auth-config]
-  (f [request]
-     (let [config (common-config auth-config)
-           resp-or-req (workflow-request request config)
-           ;; new request
-           resp (if-let [arg-map (:friend/new-request-map resp-or-req)
-                         new-request (:request arg-map)]
-                    (let [config (merge config arg-map)]
-                      ; *identity*->auth binding, workflow result and error-handler
-                      ; or new-request
-                      (or (with-try retry-request request config) (with-try handler new-request config))))]
-       (authenticate-response resp request))))
-
 ;; TODO
 #_(defmacro role-case
   [])
