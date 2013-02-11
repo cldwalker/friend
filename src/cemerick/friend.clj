@@ -169,7 +169,7 @@ Equivalent to (complement current-authentication)."}
     response))
 
 (defn- try-authenticate-request
-  [request handler {:keys [new-auth? unauthorized-handler unauthenticated-handler workflow-result auth]}]
+  [request handler {:keys [new-auth? catch-handler workflow-result]}]
   (try+
    (if-not new-auth?
      (handler request)
@@ -178,22 +178,27 @@ Equivalent to (complement current-authentication)."}
        (assoc response :friend/ensure-identity-request request)))
    (catch ::type error-map
      ;; TODO log unauthorized access at trace level
-     ((if auth unauthorized-handler unauthenticated-handler)
+     (catch-handler
       (assoc request ::authorization-failure error-map)))))
 
 (defn retry-request [request config workflow-result handler]
-  (let [config (merge {:allow-anon? true
-                       :unauthenticated-handler #'default-unauthenticated-handler
-                       :unauthorized-handler #'default-unauthorized-handler} config)
+  (let [{:keys [unauthenticated-handler unauthorized-handler allow-anon?]}
+        (merge {:allow-anon? true
+                :unauthenticated-handler #'default-unauthenticated-handler
+                :unauthorized-handler #'default-unauthorized-handler} config)
         new-auth? (auth? workflow-result)
         request (if new-auth?
                   (merge-authentication request workflow-result)
                   request)
         auth (identity request)]
     (binding [*identity* auth]
-      (if (and (not auth) (not (:allow-anon? config)))
-        ((:unauthenticated-handler config) request)
-        (try-authenticate-request request handler (assoc config :new-auth? new-auth? :workflow-result workflow-result :auth auth))))))
+      (if (and (not auth) (not allow-anon?))
+        (unauthenticated-handler request)
+        (try-authenticate-request request handler
+                                  (assoc config
+                                    :new-auth? new-auth?
+                                    :workflow-result workflow-result
+                                    :catch-handler (if auth unauthorized-handler unauthenticated-handler)))))))
 
 (defn- authenticate*
   [handler config request]
