@@ -163,6 +163,19 @@ Equivalent to (complement current-authentication)."}
     (assoc :session (:session request))
     (assoc-in [:session ::unauthorized-uri] (:uri request))))
 
+(defn- try-authenticate-request
+  [request handler {:keys [new-auth? unauthorized-handler unauthenticated-handler workflow-result auth]}]
+  (try+
+   (if-not new-auth?
+     (handler request)
+     (when-let [response (or (redirect-new-auth workflow-result request)
+                             (handler request))]
+       (ensure-identity response request)))
+   (catch ::type error-map
+     ;; TODO log unauthorized access at trace level
+     ((if auth unauthorized-handler unauthenticated-handler)
+      (assoc request ::authorization-failure error-map)))))
+
 (defn- authenticate*
   [handler config request]
   (let [{:keys [allow-anon? unauthorized-handler unauthenticated-handler
@@ -190,16 +203,8 @@ Equivalent to (complement current-authentication)."}
           (binding [*identity* auth]
             (if (and (not auth) (not allow-anon?))
               (unauthenticated-handler request)
-              (try+
-                (if-not new-auth?
-                  (handler request)
-                  (-?> (or (redirect-new-auth workflow-result request)
-                           (handler request))
-                    (ensure-identity request)))
-                (catch ::type error-map
-                  ;; TODO log unauthorized access at trace level
-                  ((if auth unauthorized-handler unauthenticated-handler)
-                    (assoc request ::authorization-failure error-map))))))))))
+              (try-authenticate-request request handler (assoc config :new-auth? new-auth? :workflow-result workflow-result :auth auth))
+  ))))))
 
 (defn authenticate
   [ring-handler auth-config]
