@@ -164,8 +164,8 @@ Equivalent to (complement current-authentication)."}
     (assoc-in [:session ::unauthorized-uri] (:uri request))))
 
 (defn authenticate-response [response request]
-  (if (:friend/ensure-identity response)
-    (ensure-identity response request)
+  (if-let [new-request (:friend/ensure-identity-request response)]
+    (ensure-identity response new-request)
     response))
 
 (defn- try-authenticate-request
@@ -175,7 +175,7 @@ Equivalent to (complement current-authentication)."}
      (handler request)
      (when-let [response (or (redirect-new-auth workflow-result request)
                              (handler request))]
-       (assoc response :friend/ensure-identity true)))
+       (assoc response :friend/ensure-identity-request request)))
    (catch ::type error-map
      ;; TODO log unauthorized access at trace level
      ((if auth unauthorized-handler unauthenticated-handler)
@@ -208,14 +208,13 @@ Equivalent to (complement current-authentication)."}
           (binding [*identity* auth]
             (if (and (not auth) (not allow-anon?))
               (unauthenticated-handler request)
-              (do
-                (when-let [response (try-authenticate-request request handler (assoc config :new-auth? new-auth? :workflow-result workflow-result :auth auth))]
-                  (authenticate-response response request)))))))))
+              (try-authenticate-request request handler (assoc config :new-auth? new-auth? :workflow-result workflow-result :auth auth))))))))
 
 (defn authenticate
   [ring-handler auth-config]
   ; keeping authenticate* separate is damn handy for debugging hooks, etc.
-  #(authenticate* ring-handler auth-config %))
+  (fn [request] (let [response (authenticate* ring-handler auth-config request)]
+                 (authenticate-response response request))))
 
 ;; TODO
 #_(defmacro role-case
