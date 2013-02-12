@@ -163,10 +163,12 @@ Equivalent to (complement current-authentication)."}
     (assoc :session (:session request))
     (assoc-in [:session ::unauthorized-uri] (:uri request))))
 
-(defn authenticate-response [response request]
+(defn authenticate-response
+  "Adds to the response's :session for responses with a :friend/ensure-identity-request key."
+  [response request]
   (if-let [new-request (:friend/ensure-identity-request response)]
-    (ensure-identity response new-request)
-    response))
+    (ensure-identity (dissoc response :friend/ensure-identity-request) new-request)
+    (dissoc response :friend/ensure-identity-request)))
 
 (defn- retry-request
   [{:keys [request new-auth? workflow-result catch-handler] :as args}]
@@ -194,12 +196,12 @@ Equivalent to (complement current-authentication)."}
     (binding [*identity* auth]
       (if (and (not auth) (not allow-anon?))
         (unauthenticated-handler request)
-        (retry-request (assoc config
-                         :request request
-                         :auth auth
-                         :new-auth? new-auth?
-                         :workflow-result workflow-result
-                         :catch-handler (if auth unauthorized-handler unauthenticated-handler)))))))
+        (retry-request
+         {:request request
+          :auth auth
+          :new-auth? new-auth?
+          :workflow-result workflow-result
+          :catch-handler (if auth unauthorized-handler unauthenticated-handler)})))))
 
 (defn- handler-request [handler {:keys [catch-handler request auth]}]
   (binding [*identity* auth]
@@ -231,10 +233,11 @@ which contains a map to be called with a ring handler."
 (defn authenticate
   [ring-handler auth-config]
   ; keeping authenticate* separate is damn handy for debugging hooks, etc.
-  (fn [request] (let [response-or-handler-map (authenticate-request request auth-config)
-                     response (if-let [handler-map (:friend/handler-map response-or-handler-map)]
-                                (handler-request ring-handler handler-map) response-or-handler-map)]
-                 (authenticate-response response request))))
+  (fn [request]
+    (let [response-or-handler-map (authenticate-request request auth-config)
+          response (if-let [handler-map (:friend/handler-map response-or-handler-map)]
+                     (handler-request ring-handler handler-map) response-or-handler-map)]
+      (authenticate-response response request))))
 
 ;; TODO
 #_(defmacro role-case
